@@ -4,6 +4,10 @@ stories15M.bin
 stories42M.bin
 stories110M.bin
 run.exe
+official/
+data/
+wandb/
+out/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

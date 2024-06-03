@@ -63,7 +63,7 @@ def download():
     # print a single example just for debugging and such
     shard_filenames = sorted(glob.glob(os.path.join(data_dir, "*.jsonl")))
     data = []
-    with open(shard_filenames[0], "r") as f:
+    with open(shard_filenames[0], "r", encoding='utf-8') as f:
         for line in f:
             data.append(json.loads(line))
     print("Download done.")
@@ -96,11 +96,8 @@ def train_vocab(vocab_size):
     with open(tiny_file, "w", encoding="utf-8") as of:
         for shard in tqdm(shard_filenames[:num_shards]):
 
-            # change for zh
-            # with open(shard, "r") as f:
-            #     data = json.load(f)
             data = []
-            with open(shard, "r") as f:
+            with open(shard, "r", encoding='utf-8') as f:
                 for line in f:
                     data.append(json.loads(line))
 
@@ -145,19 +142,14 @@ def process_shard(args, vocab_size):
     tokenizer_model = get_tokenizer_model_path(vocab_size)
     enc = Tokenizer(tokenizer_model)
 
-    # change for zh
-    # with open(shard, "r") as f:
-    #     data = json.load(f)
     data = []
-    with open(shard, "r") as f:
+    with open(shard, "r", encoding='utf-8') as f:
         for line in f:
             data.append(json.loads(line))
 
     all_tokens = []
     for example in tqdm(data, position=shard_id):
 
-        # change for zh
-        # text = example["story"]
         text = example["story_zh"]
 
         text = text.strip()  # get rid of leading/trailing whitespace

@@ -15,7 +15,8 @@ $ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123
 $ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py
 (If your cluster does not have Infiniband interconnect prepend NCCL_IB_DISABLE=1)
 """
-
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 import math
 import os
 import time
@@ -41,14 +42,14 @@ eval_only = False  # if True, script exits right after the first eval
 always_save_checkpoint = False  # if True, always save a checkpoint after each eval
 init_from = "scratch"  # 'scratch' or 'resume'
 # wandb logging
-wandb_log = False  # disabled by default
+wandb_log = True  # disabled by default
 wandb_project = "llamac"
 wandb_run_name = "run" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 # data
 batch_size = 128  # if gradient_accumulation_steps > 1, this is the micro-batch size
 max_seq_len = 256
-vocab_source = "llama2" # llama2|custom; use Lllama 2 vocab from Meta, or custom trained
-vocab_size = 32000 # the Llama 2 tokenizer has 32K tokens
+vocab_source = "custom" # llama2|custom; use Lllama 2 vocab from Meta, or custom trained
+vocab_size = 5000 # the Llama 2 tokenizer has 32K tokens
 # model
 dim = 288
 n_layers = 6
@@ -262,6 +263,7 @@ while True:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
+            print('logging to wandb...')
             try:
                 wandb.log(
                     {
@@ -332,6 +334,22 @@ while True:
         print(
             f"{iter_num} | loss {lossf:.4f} | lr {lr:e} | {dt*1000:.2f}ms | mfu {running_mfu*100:.2f}%"
         )
+        
+        if wandb_log:
+            print('logging to wandb...')
+            try:
+                wandb.log(
+                    {
+                        "iter": iter_num,
+                        "tokens": iter_num * tokens_per_iter,
+                        "loss": lossf,
+                        "lr": lr,
+                        "mfu": running_mfu * 100,  # convert to percentage
+                    }, step = iter_num
+                )
+            except Exception as e:
+                print(f"logging to wandb failed: {e}")
+                
     iter_num += 1
     local_iter_num += 1
 
