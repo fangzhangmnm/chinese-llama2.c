@@ -8,7 +8,12 @@
 #include <string.h>
 #include <fcntl.h>
 #if defined _WIN32
-    #include "win.h"
+    // #include "win.h"
+    #include <wchar.h>
+    #include <locale.h>
+    #include <windows.h>
+    #include <stdint.h>
+    #include "mmap-windows.c"
 #else
     #include <unistd.h>
     #include <sys/mman.h>
@@ -910,7 +915,48 @@ void error_usage() {
     exit(EXIT_FAILURE);
 }
 
+#ifdef _WIN32
+void setConsoleToUTF8() {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    _setmode(_fileno(stdin), _O_U8TEXT);
+    // Enables the use of ANSI escape sequences
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        GetConsoleMode(hOut, &dwMode);
+        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        SetConsoleMode(hOut, dwMode);
+    }
+}
+
+char* wideToUtf8(const wchar_t* wide) {
+    if (!wide) return NULL;
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    char* utf8 = malloc(size_needed);
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, size_needed, NULL, NULL);
+    return utf8;
+}
+
+char** parseCommandLine(int* outArgc) {
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), outArgc);
+    char** argv = malloc(*outArgc * sizeof(char*));
+    for (int i = 0; i < *outArgc; ++i) {
+        argv[i] = wideToUtf8(wargv[i]);
+    }
+    LocalFree(wargv);
+    return argv;
+}
+#endif
+
+#ifdef _WIN32
+int main(){
+    int argc;
+    char** argv = parseCommandLine(&argc);
+    setConsoleToUTF8();
+#else
 int main(int argc, char *argv[]) {
+#endif
 
     // default parameters
     char *checkpoint_path = NULL;  // e.g. out/model.bin
@@ -922,6 +968,7 @@ int main(int argc, char *argv[]) {
     unsigned long long rng_seed = 0; // seed rng with time by default
     char *mode = "generate";    // generate|chat
     char *system_prompt = NULL; // the (optional) system prompt to use in chat mode
+
 
     // poor man's C argparse so we can override the defaults above from the command line
     if (argc >= 2) { checkpoint_path = argv[1]; } else { error_usage(); }
