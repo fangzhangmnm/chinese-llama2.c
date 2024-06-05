@@ -73,7 +73,7 @@ python3 tinystories.py pretokenize --vocab_size=5000
 ```
 
 将 tokenizer 导出为`.bin`格式：
-```
+```bash
 python3 tokenizer.py --tokenizer-model=data/tok5000.model
 ```
 
@@ -96,3 +96,12 @@ torchrun --standalone --nproc_per_node=4 train.py --vocab_source=custom --vocab_
 | 15M | 6.5G | 13 | 131,072 | 100,000 | 1G | ~1h |
 | 42M | 30.5G |  10.5 | 524,288 | 20,000 | 1G | ~1.5h |
 | 110M | 53.5G | 10.5 | 524,288 | 20,000 | 1G | ~3.4h |
+
+### 把训练的模型导出到HuggingFace
+
+```bash
+python3 export.py ./hf_export/my_model --version -1 --dtype fp16 --checkpoint ./out/ckpt.pt
+python3 export_tokenizer.py ./hf_export/my_model -m ./data/tok5000.model
+```
+
+注意：使用TinyStories.py生成的数据集训练出来的模型可能会在写完一个故事之后输出乱码。这是因为训练数据中只有bos token没有eos token的缘故。

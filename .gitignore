@@ -8,6 +8,7 @@ official/
 data/
 wandb/
 out/
+hf_export/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
