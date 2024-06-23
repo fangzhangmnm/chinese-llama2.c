@@ -20,6 +20,7 @@ torch._dynamo.config.suppress_errors = True
 import math
 import os
 import time
+import shutil
 from contextlib import nullcontext
 from datetime import datetime
 from functools import partial
@@ -35,32 +36,37 @@ from export import model_export
 # -----------------------------------------------------------------------------
 # I/O
 out_dir = "out"
-eval_interval = 2000
+eval_interval = 100
+backup_ckpt=True
 log_interval = 1
-eval_iters = 100
+eval_iters = 10
 eval_only = False  # if True, script exits right after the first eval
-always_save_checkpoint = False  # if True, always save a checkpoint after each eval
-init_from = "scratch"  # 'scratch' or 'resume'
+always_save_checkpoint = True  # if True, always save a checkpoint after each eval
+init_from = "resume"  # 'scratch' or 'resume'
 # wandb logging
 wandb_log = True  # disabled by default
 wandb_project = "llamac"
 wandb_run_name = "run" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 # data
-batch_size = 128  # if gradient_accumulation_steps > 1, this is the micro-batch size
-max_seq_len = 256
+# batch_size = 128  # if gradient_accumulation_steps > 1, this is the micro-batch size
+# max_seq_len = 1024 # 256
 vocab_source = "custom" # llama2|custom; use Lllama 2 vocab from Meta, or custom trained
 vocab_size = 5000 # the Llama 2 tokenizer has 32K tokens
 # model
-dim = 288
-n_layers = 6
-n_heads = 6
-n_kv_heads = 6
+# dim = 512 # 288
+# n_layers = 8 # 6
+# n_heads = 8 # 6
+# n_kv_heads = 8 # 6
+# dim=288;n_layers=n_heads=n_kv_heads=6;max_seq_len=256;batch_size=128;gradient_accumulation_steps=4
+# dim=512;n_layers=n_heads=n_kv_heads=8;max_seq_len=1024;
+dim=768;n_layers=n_heads=n_kv_heads=12;max_seq_len=1024;batch_size=4;gradient_accumulation_steps=128
+
 multiple_of = 32
 dropout = 0.0
 # adamw optimizer
-gradient_accumulation_steps = 4  # used to simulate larger batch sizes
+# gradient_accumulation_steps = 4  # used to simulate larger batch sizes
 learning_rate = 5e-4  # max learning rate
-max_iters = 100000  # total number of training iterations
+max_iters = 4000  # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
 beta2 = 0.95
@@ -72,6 +78,15 @@ warmup_iters = 1000  # how many steps to warm up for
 device = "cuda"  # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = "bfloat16"  # float32|bfloat16|float16
 compile = True  # use PyTorch 2.0 to compile the model to be faster
+
+
+# for finetuning
+learning_rate=1e-4
+warmup_iters = 4000
+max_iters = 10000
+decay_lr=False
+eval_interval=50
+
 # -----------------------------------------------------------------------------
 config_keys = [
     k
@@ -262,6 +277,7 @@ while True:
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        running_mfu=max(0,min(1,running_mfu))
         if wandb_log:
             print('logging to wandb...')
             try:
@@ -291,6 +307,11 @@ while True:
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
                 model_export(raw_model, os.path.join(out_dir, "model.bin"), version=0)
+                if backup_ckpt:
+                    shutil.copy(os.path.join(out_dir, "ckpt.pt"), os.path.join(out_dir, f"ckpt_{iter_num}.pt"))
+                    shutil.copy(os.path.join(out_dir, "model.bin"), os.path.join(out_dir, f"model_{iter_num}.bin"))
+                    
+
     if iter_num == 0 and eval_only:
         break
 
@@ -331,6 +352,7 @@ while True:
         if local_iter_num >= 5:  # let the training loop settle a bit
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
+            running_mfu=max(0,min(1,running_mfu))
         print(
             f"{iter_num} | loss {lossf:.4f} | lr {lr:e} | {dt*1000:.2f}ms | mfu {running_mfu*100:.2f}%"
         )

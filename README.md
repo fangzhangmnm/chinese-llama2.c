@@ -66,16 +66,25 @@ make run
 ## 自己从头训练
 
 ### 训练 tokenizer
+
+使用tinystories数据集：
 ```bash
 python3 tinystories.py download
 python3 tinystories.py train_vocab --vocab_size=5000
 python3 tinystories.py pretokenize --vocab_size=5000
 ```
 
+自定义的数据集：
+```bash
+python3 tinystories.py pretokenize --vocab_size=5000 --data_dir folder_for_jsonl_files
+```
+
 将 tokenizer 导出为`.bin`格式：
 ```bash
 python3 tokenizer.py --tokenizer-model=data/tok5000.model
 ```
+
+
 
 ### 训练模型
 

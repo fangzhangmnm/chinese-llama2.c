@@ -1,4 +1,4 @@
-text='鸡肉都洒'
+text='洗脸'
 
 
 # search ./data/TinyStories_all_data/*.jsonl to look for duplicity

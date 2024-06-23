@@ -70,7 +70,14 @@ def download():
     print(f"Number of shards: {len(shard_filenames)}")
     print(f"Example story:\n{data[0]}")
 
-def train_vocab(vocab_size):
+def find_content(example):
+    possible_keys = ["story_zh", "text_zh", "story", "text", "content", "unstructed_text"]
+    for key in possible_keys:
+        if key in example:
+            return example[key]
+    return max(example, key=len)
+
+def train_vocab(vocab_size, data_dir):
     """
     Trains a custom sentencepiece tokenizer on the TinyStories dataset.
     The custom tokenizer files will be saved in DATA_CACHE_DIR/tok{N} directories,
@@ -86,7 +93,7 @@ def train_vocab(vocab_size):
 
     # 1) export a large chunk of text as a single text file tiny.txt
     tiny_file = os.path.join(DATA_CACHE_DIR, "tiny.txt")
-    data_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
+    # data_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
 
     # change for zh
     # shard_filenames = sorted(glob.glob(os.path.join(data_dir, "*.json")))
@@ -102,11 +109,7 @@ def train_vocab(vocab_size):
                     data.append(json.loads(line))
 
             for example in data:
-
-                # change for zh
-                # text = example["story"]
-                text = example["story_zh"]
-
+                text=find_content(example)
                 text = text.strip()
                 of.write(text + "\n")
     print(f"Size is: {os.path.getsize(tiny_file) / 1024 / 1024:.2f} MB")
@@ -119,7 +122,7 @@ def train_vocab(vocab_size):
                                    vocab_size=vocab_size,
                                    self_test_sample_size=0,
                                    input_format="text",
-                                   character_coverage=1.0,
+                                   character_coverage=0.9995,
                                    num_threads=os.cpu_count(),
                                    split_digits=True,
                                    allow_whitespace_only_pieces=True,
@@ -137,21 +140,33 @@ def train_vocab(vocab_size):
     print("Done.")
 
 
+
 def process_shard(args, vocab_size):
     shard_id, shard = args
     tokenizer_model = get_tokenizer_model_path(vocab_size)
     enc = Tokenizer(tokenizer_model)
 
     data = []
-    with open(shard, "r", encoding='utf-8') as f:
-        for line in f:
-            data.append(json.loads(line))
+
+    is_txt=shard.endswith(".txt") or shard.endswith(".md")
+    if is_txt:
+        current_str=""
+        with open(shard, "r", encoding='utf-8') as f:
+            for line in f:
+                current_str+=line
+        if len(current_str)>0:
+            data.append({"text":current_str})
+    else:
+        with open(shard, "r", encoding='utf-8') as f:
+            for line in f:
+                try:
+                    data.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print(f"Error decoding line: {line}")
 
     all_tokens = []
     for example in tqdm(data, position=shard_id):
-
-        text = example["story_zh"]
-
+        text=find_content(example)
         text = text.strip()  # get rid of leading/trailing whitespace
         tokens = enc.encode(text, bos=True, eos=False)  # encode the text, use BOS
         all_tokens.extend(tokens)
@@ -160,12 +175,12 @@ def process_shard(args, vocab_size):
     # calculate the output filename
     if vocab_size == 0:
         # if we're using Llama 2, just save the tokenized file in the same dir
-        tokenized_filename = shard.replace(".jsonl", ".bin")
+        tokenized_filename = shard.replace(".jsonl", ".bin").replace(".txt", ".bin").replace(".md", ".bin")
     else:
         # save .bin files into a new tok{N} directory
         bin_dir = os.path.join(DATA_CACHE_DIR, f"tok{vocab_size}")
         shard_basename = os.path.basename(shard)
-        bin_basename = shard_basename.replace(".jsonl", ".bin")
+        bin_basename = shard_basename.replace(".jsonl", ".bin").replace(".txt", ".bin").replace(".md", ".bin")
         tokenized_filename = os.path.join(bin_dir, bin_basename)
     # write the bytes
     with open(tokenized_filename, "wb") as f:
@@ -175,13 +190,17 @@ def process_shard(args, vocab_size):
     print(f"Saved {tokenized_filename}, average seqlen: {avg_seq_len:.2f}")
 
 
-def pretokenize(vocab_size):
+
+def pretokenize(vocab_size,data_dir):
     # iterate the shards and tokenize all of them one by one
-    data_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
 
     # change for zh
     # shard_filenames = sorted(glob.glob(os.path.join(data_dir, "*.json")))
-    shard_filenames = sorted(glob.glob(os.path.join(data_dir, "*.jsonl")))
+    shard_filenames = list(glob.glob(os.path.join(data_dir, "*.jsonl")))
+    shard_filenames.extend(glob.glob(os.path.join(data_dir, "*.txt")))
+    shard_filenames.extend(glob.glob(os.path.join(data_dir, "*.md")))
+    print(f"Found {len(shard_filenames)} shards to tokenize.")
+    shard_filenames = sorted(shard_filenames)
 
     if vocab_size > 0:
         # .bin files will be saved into tok{N} directory, create it once here
@@ -287,18 +306,21 @@ if __name__ == "__main__":
     python tinystories.py download
     python tinystories.py train_vocab --vocab_size=2048
     python tinystories.py pretokenize --vocab_size=2048
+
+    the jsonl files in the data dir should have a "story_zh" or "text_zh" field with the text to tokenize
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", type=str, choices=["download", "pretokenize", "train_vocab"])
     parser.add_argument("--vocab_size", type=int, default=0, help="pretokenization vocab size. 0 = use Llama 2 tokenizer.")
+    parser.add_argument("--data_dir", type=str, default="data/TinyStories_all_data", help="data dir for jsonl files.")
     args = parser.parse_args()
 
     # depending on the stage call the appropriate function
     if args.stage == "download":
         download()
     elif args.stage == "train_vocab":
-        train_vocab(vocab_size=args.vocab_size)
+        train_vocab(vocab_size=args.vocab_size,data_dir=args.data_dir)
     elif args.stage == "pretokenize":
-        pretokenize(vocab_size=args.vocab_size)
+        pretokenize(vocab_size=args.vocab_size,data_dir=args.data_dir)
     else:
         raise ValueError(f"Unknown stage {args.stage}")
